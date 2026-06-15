@@ -168,6 +168,8 @@ def init_agent(
     tool_progress_callback: callable = None,
     tool_start_callback: callable = None,
     tool_complete_callback: callable = None,
+    # IKARUS additive patch #1 (ADR-012 addendum) — pre-tool approval seam.
+    tool_approval_callback: callable = None,
     thinking_callback: callable = None,
     reasoning_callback: callable = None,
     clarify_callback: callable = None,
@@ -392,6 +394,8 @@ def init_agent(
     agent.tool_progress_callback = tool_progress_callback
     agent.tool_start_callback = tool_start_callback
     agent.tool_complete_callback = tool_complete_callback
+    # IKARUS additive patch #1 (ADR-012 addendum) — pre-tool approval seam.
+    agent.tool_approval_callback = tool_approval_callback
     agent.suppress_status_output = False
     agent.thinking_callback = thinking_callback
     agent.reasoning_callback = reasoning_callback

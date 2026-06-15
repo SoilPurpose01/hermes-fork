@@ -62,6 +62,34 @@ def _ra():
     return run_agent
 
 
+def _approval_block_message(agent, function_name, tool_call_id, function_args):
+    """IKARUS additive patch #1 (ADR-012 addendum) — pre-tool approval seam.
+
+    If an embedder registered ``agent.tool_approval_callback(name, tool_call_id,
+    args) -> 'allow' | 'deny'``, consult it right before dispatch. Returns a
+    synthetic block message on ``'deny'`` (the caller routes it through the
+    EXISTING block path, so a denial produces the usual tool_result error and no
+    new execution route is added), else ``None``.
+
+    The callback MAY block — the embedder waits there for a human/policy decision;
+    that blocking IS the pause. Fail-open: no callback, or any callback error,
+    returns ``None`` so behaviour is byte-identical to upstream.
+    """
+    callback = getattr(agent, "tool_approval_callback", None)
+    if callback is None:
+        return None
+    try:
+        verdict = callback(function_name, tool_call_id, function_args)
+    except Exception:
+        logger.error(
+            "tool_approval_callback raised for %s; failing open", function_name, exc_info=True
+        )
+        return None
+    if verdict == "deny":
+        return "Tool call denied by the approval policy."
+    return None
+
+
 def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effective_task_id: str, api_call_count: int = 0) -> None:
     """Execute multiple tool calls concurrently using a thread pool.
 
@@ -139,6 +167,17 @@ def execute_tool_calls_concurrent(agent, assistant_message, messages: list, effe
             if not guardrail_decision.allows_execution:
                 block_result = agent._guardrail_block_result(guardrail_decision)
                 blocked_by_guardrail = True
+
+        # IKARUS additive patch #1 (ADR-012 addendum) — pre-tool approval seam.
+        # Mirror the sequential path: a denied tool is pre-blocked with the usual
+        # synthetic error and never dispatched. Approvals run serially in the
+        # agent thread here, before the worker pool is launched.
+        if block_result is None:
+            _approval_msg = _approval_block_message(
+                agent, function_name, tool_call.id, function_args
+            )
+            if _approval_msg is not None:
+                block_result = json.dumps({"error": _approval_msg}, ensure_ascii=False)
 
         parsed_calls.append((tool_call, function_name, function_args, block_result, blocked_by_guardrail))
 
@@ -514,6 +553,17 @@ def execute_tool_calls_sequential(agent, assistant_message, messages: list, effe
                 _guardrail_block_decision = guardrail_decision
 
         _execution_blocked = _block_msg is not None or _guardrail_block_decision is not None
+
+        # IKARUS additive patch #1 (ADR-012 addendum) — pre-tool approval seam.
+        # Consult the embedder's approval hook before dispatch; a denial reuses
+        # the existing block path (synthetic tool_result error below).
+        if not _execution_blocked:
+            _approval_msg = _approval_block_message(
+                agent, function_name, tool_call.id, function_args
+            )
+            if _approval_msg is not None:
+                _block_msg = _approval_msg
+                _execution_blocked = True
 
         if _execution_blocked:
             # Tool blocked by plugin or guardrail policy — skip counters,

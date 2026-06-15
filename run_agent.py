@@ -378,6 +378,10 @@ class AIAgent:
         tool_progress_callback: callable = None,
         tool_start_callback: callable = None,
         tool_complete_callback: callable = None,
+        # IKARUS additive patch #1 (ADR-012 addendum) — pre-tool approval seam.
+        # Optional embedder hook (name, tool_call_id, args) -> 'allow' | 'deny',
+        # consulted right before each tool dispatch. Default None = upstream behavior.
+        tool_approval_callback: callable = None,
         thinking_callback: callable = None,
         reasoning_callback: callable = None,
         clarify_callback: callable = None,
@@ -447,6 +451,7 @@ class AIAgent:
             tool_progress_callback=tool_progress_callback,
             tool_start_callback=tool_start_callback,
             tool_complete_callback=tool_complete_callback,
+            tool_approval_callback=tool_approval_callback,
             thinking_callback=thinking_callback,
             reasoning_callback=reasoning_callback,
             clarify_callback=clarify_callback,
